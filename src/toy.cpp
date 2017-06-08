@@ -399,6 +399,23 @@ public:
     return Body ? Body->dump(out, ind) : out << "null\n";
   }
 };
+
+class MainFunctionAST {
+  std::unique_ptr<PrototypeAST> Proto;
+  std::unique_ptr<ExprAST> Body;
+
+public:
+  MainFunctionAST(std::unique_ptr<PrototypeAST> Proto,
+                  std::unique_ptr<ExprAST> Body)
+      : Proto(std::move(Proto)), Body(std::move(Body)) {}
+  Function *codegen();
+  raw_ostream &dump(raw_ostream &out, int ind) {
+    indent(out, ind) << "MainFunctionAST\n";
+    ++ind;
+    indent(out, ind) << "Body:";
+    return Body ? Body->dump(out, ind) : out << "null\n";
+  }
+};
 } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
@@ -796,13 +813,13 @@ static std::unique_ptr<FunctionAST> ParseDefinition() {
 }
 
 /// toplevelexpr ::= expression
-static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
+static std::unique_ptr<MainFunctionAST> ParseTopLevelExpr() {
   SourceLocation FnLoc = CurLoc;
   if (auto E = ParseExpression()) {
-    // Make an anonymous proto.
-    auto Proto = llvm::make_unique<PrototypeAST>(FnLoc, "__anon_expr",
+    // Make proto for main.
+    auto Proto = llvm::make_unique<PrototypeAST>(FnLoc, "main",
                                                  std::vector<std::string>());
-    return llvm::make_unique<FunctionAST>(std::move(Proto), std::move(E));
+    return llvm::make_unique<MainFunctionAST>(std::move(Proto), std::move(E));
   }
   return nullptr;
 }
@@ -1309,6 +1326,71 @@ Function *FunctionAST::codegen() {
   return nullptr;
 }
 
+Function *MainFunctionAST::codegen() {
+  // Make simplified function type for main: int()
+  Type *Int32Ty = Type::getInt32Ty(TheContext);
+
+  FunctionType *FT =
+      FunctionType::get(Int32Ty, false);
+
+  Function *TheFunction =
+      Function::Create(FT, Function::ExternalLinkage, "main", TheModule.get());
+
+  // Create a new basic block to start insertion into.
+  BasicBlock *BB = BasicBlock::Create(TheContext, "entry", TheFunction);
+  Builder.SetInsertPoint(BB);
+
+  // Create a subprogram DIE for this function.
+  DIFile *Unit = DBuilder->createFile(KSDbgInfo.TheCU->getFilename(),
+                                      KSDbgInfo.TheCU->getDirectory());
+  DIScope *FContext = Unit;
+  unsigned LineNo = Proto->getLine();
+  unsigned ScopeLine = LineNo;
+  DISubprogram *SP = DBuilder->createFunction(
+      FContext, Proto->getName(), StringRef(), Unit, LineNo,
+      CreateFunctionType(TheFunction->arg_size(), Unit),
+      false /* internal linkage */, true /* definition */, ScopeLine,
+      DINode::FlagPrototyped, false);
+  TheFunction->setSubprogram(SP);
+
+  // Push the current scope.
+  KSDbgInfo.LexicalBlocks.push_back(SP);
+
+  // Unset the location for the prologue emission (leading instructions with no
+  // location in a function are considered part of the prologue and the debugger
+  // will run past them when breaking on a function)
+  KSDbgInfo.emitLocation(nullptr);
+
+  // Record the function arguments in the NamedValues map.
+  NamedValues.clear();
+
+  KSDbgInfo.emitLocation(Body.get());
+
+  if (Value *RetVal = Body->codegen()) {
+    Value *IntRetVal = Builder.CreateFPToSI(RetVal, Int32Ty, "retval");
+
+    // Finish off the function.
+    Builder.CreateRet(IntRetVal);
+
+    // Pop off the lexical block for the function.
+    KSDbgInfo.LexicalBlocks.pop_back();
+
+    // Validate the generated code, checking for consistency.
+    verifyFunction(*TheFunction);
+
+    return TheFunction;
+  }
+
+  // Error reading body, remove function.
+  TheFunction->eraseFromParent();
+
+  // Pop off the lexical block for the function since we added it
+  // unconditionally.
+  KSDbgInfo.LexicalBlocks.pop_back();
+
+  return nullptr;
+}
+
 //===----------------------------------------------------------------------===//
 // Top-Level parsing and JIT Driver
 //===----------------------------------------------------------------------===//
@@ -1343,8 +1425,8 @@ static void HandleExtern() {
 
 static void HandleTopLevelExpression() {
   // Evaluate a top-level expression into an anonymous function.
-  if (auto FnAST = ParseTopLevelExpr()) {
-    if (!FnAST->codegen()) {
+  if (auto MainFnAST = ParseTopLevelExpr()) {
+    if (!MainFnAST->codegen()) {
       fprintf(stderr, "Error generating code for top level expr");
     }
   } else {
