@@ -17,6 +17,7 @@
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
+#include "llvm/ExecutionEngine/JITEventListener.h"
 #include "llvm/ExecutionEngine/JITSymbol.h"
 #include "llvm/ExecutionEngine/RTDyldMemoryManager.h"
 #include "llvm/ExecutionEngine/RuntimeDyld.h"
@@ -39,14 +40,45 @@ namespace llvm {
 namespace orc {
 
 class KaleidoscopeJIT {
+  class NotifyObjectLoadedT {
+  public:
+    typedef std::vector<std::unique_ptr<RuntimeDyld::LoadedObjectInfo>>
+        LoadedObjInfoListT;
+
+    NotifyObjectLoadedT(KaleidoscopeJIT &K) : K(K) {}
+
+    template <typename ObjListT>
+    void operator()(ObjectLinkingLayerBase::ObjSetHandleT H,
+                    const ObjListT &Objects,
+                    const LoadedObjInfoListT &Infos) const {
+      for (unsigned i = 0; i < Objects.size(); ++i)
+        K.GDBEventListener->NotifyObjectEmitted(getObject(*Objects[i]), *Infos[i]);
+    }
+
+  private:
+    static const object::ObjectFile& getObject(const object::ObjectFile &Obj) {
+      return Obj;
+    }
+
+    template <typename ObjT>
+    static const object::ObjectFile&
+    getObject(const object::OwningBinary<ObjT> &Obj) {
+      return *Obj.getBinary();
+    }
+
+    KaleidoscopeJIT &K;
+  };
+
 public:
-  typedef ObjectLinkingLayer<> ObjLayerT;
+  typedef ObjectLinkingLayer<NotifyObjectLoadedT> ObjLayerT;
   typedef IRCompileLayer<ObjLayerT> CompileLayerT;
   typedef CompileLayerT::ModuleSetHandleT ModuleHandleT;
 
   KaleidoscopeJIT()
       : TM(EngineBuilder().selectTarget()), DL(TM->createDataLayout()),
-        CompileLayer(ObjectLayer, SimpleCompiler(*TM)) {
+        NotifyObjectLoaded(*this), ObjectLayer(NotifyObjectLoaded),
+        CompileLayer(ObjectLayer, SimpleCompiler(*TM)),
+        GDBEventListener(JITEventListener::createGDBRegistrationListener()) {
     llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
   }
 
@@ -113,9 +145,11 @@ private:
 
   std::unique_ptr<TargetMachine> TM;
   const DataLayout DL;
+  NotifyObjectLoadedT NotifyObjectLoaded;
   ObjLayerT ObjectLayer;
   CompileLayerT CompileLayer;
   std::vector<ModuleHandleT> ModuleHandles;
+  JITEventListener* GDBEventListener;
 };
 
 } // end namespace orc

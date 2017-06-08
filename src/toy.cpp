@@ -1399,6 +1399,11 @@ static void InitializeModule() {
   // Open a new module.
   TheModule = llvm::make_unique<Module>("my cool jit", TheContext);
   TheModule->setDataLayout(TheJIT->getTargetMachine().createDataLayout());
+
+  // Create empty pass manager and run init.
+  // For some reason this is necessary for lldb debug support.
+  legacy::FunctionPassManager dummyFPM(TheModule.get());
+  dummyFPM.doInitialization();
 }
 
 static void HandleDefinition() {
