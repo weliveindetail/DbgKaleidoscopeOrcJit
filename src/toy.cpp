@@ -1521,8 +1521,22 @@ int main() {
   // Finalize the debug info.
   DBuilder->finalize();
 
-  // Print out all of the generated code.
-  TheModule->dump();
+  // JIT the module containing the main function, keeping a handle so
+  // we can free it later.
+  auto H = TheJIT->addModule(std::move(TheModule));
+
+  // Search the JIT for the main symbol.
+  auto ExprSymbol = TheJIT->findSymbol("main");
+  assert(ExprSymbol && "Function not found");
+
+  // Get the symbol's address and cast it to the right type (takes no
+  // arguments, returns a double) so we can call it as a native function.
+  using FPTy = int (*)();
+  FPTy FP = (FPTy)(intptr_t)ExprSymbol.getAddress();
+  fprintf(stderr, "Evaluated to %d\n", FP());
+
+  // Delete the module from the JIT.
+  TheJIT->removeModule(H);
 
   return 0;
 }
