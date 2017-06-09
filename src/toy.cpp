@@ -11,9 +11,17 @@
 #include "llvm/Transforms/Scalar.h"
 #include <cctype>
 #include <cstdio>
+#include <chrono>
+#include <thread>
 #include <map>
 #include <string>
 #include <vector>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include "KaleidoscopeJIT.h"
 
 using namespace llvm;
@@ -1482,7 +1490,34 @@ extern "C" double printd(double X) {
 // Main driver code.
 //===----------------------------------------------------------------------===//
 
+int IsDebuggerPresent()
+{
+    char buf[1024];
+    int debugger_present = 0;
+
+    int status_fd = open("/proc/self/status", O_RDONLY);
+    if (status_fd == -1)
+        return 0;
+
+    ssize_t num_read = read(status_fd, buf, sizeof(buf));
+
+    if (num_read > 0)
+    {
+        static const char TracerPid[] = "TracerPid:";
+        char *tracer_pid;
+
+        buf[num_read] = 0;
+        tracer_pid    = strstr(buf, TracerPid);
+        if (tracer_pid)
+            debugger_present = !!atoi(tracer_pid + sizeof(TracerPid) - 1);
+    }
+
+    return debugger_present;
+}
+
 int main() {
+  fprintf(stderr, "Initialize..\n");
+
   InitializeNativeTarget();
   InitializeNativeTargetAsmPrinter();
   InitializeNativeTargetAsmParser();
@@ -1495,7 +1530,7 @@ int main() {
   BinopPrecedence['-'] = 20;
   BinopPrecedence['*'] = 40; // highest.
 
-  // Prime the first token.
+  fprintf(stderr, "Parse..\n");
   getNextToken();
 
   TheJIT = llvm::make_unique<KaleidoscopeJIT>();
@@ -1531,8 +1566,31 @@ int main() {
   auto H = TheJIT->addModule(std::move(TheModule));
 
   // Search the JIT for the main symbol.
+  fprintf(stderr, "Compile..\n");
   auto ExprSymbol = TheJIT->findSymbol("main");
   assert(ExprSymbol && "Function not found");
+
+  char cmd[80];
+  pid_t pid = ::getpid();
+  fprintf(stderr, "Spawn LLDB debugger..\n");
+  sprintf(cmd, "sudo setsid gnome-terminal -e \"lldb -p %d\"", (int)pid);
+  ::system(cmd);
+
+  fprintf(stderr, "Wait for LLDB to attach (PID: %d)", pid);
+
+  for (int i = 0; i < 20 && !IsDebuggerPresent(); i++) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    fprintf(stderr, ".");
+  }
+
+  if (!IsDebuggerPresent()) {
+      fprintf(stderr, "\n");
+      fprintf(stderr, "Failed to attach LLDB. Abort\n");
+      exit(-1);
+  }
+
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Run JITed code..\n");
 
   // Get the symbol's address and cast it to the right type (takes no
   // arguments, returns a double) so we can call it as a native function.
