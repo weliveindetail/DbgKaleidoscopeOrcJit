@@ -1,9 +1,13 @@
 # DbgKaleidoscopeOrcJit
 
-Minimal changes on the LLVM [Kaleidoscope example (Chapter 9)](http://llvm.org/docs/tutorial/LangImpl09.html) to enable source level debugging of JITed code.
+Minimal changes on LLVM [Kaleidoscope example (Chapter 9)](http://llvm.org/docs/tutorial/LangImpl09.html) to enable source level debugging of JITed code.
 See [commits page](https://github.com/weliveindetail/DbgKaleidoscopeOrcJit/commits/master) for step-by-step changes.
 
-The terminal log shows the whole process from checkout to execution.
+![Demo debug process](https://raw.githubusercontent.com/weliveindetail/DbgKaleidoscopeOrcJit/master/auto-spawn-lldb-demo-session.gif)
+
+Well nobody said LLDB is fast in attaching. This was recorded from branch [`auto-spawn-lldb`](https://github.com/weliveindetail/DbgKaleidoscopeOrcJit/tree/auto-spawn-lldb).
+
+The following terminal log shows the whole process from checkout to execution from `master`.
 You probably have to adjust `cmake_gen_linux.sh` as shown below.
 I use Linux Mint 18 with CMake 3.5, Clang 3.8 stable to compile C++ and LLVM Release 4.0 to build the project against.
 
