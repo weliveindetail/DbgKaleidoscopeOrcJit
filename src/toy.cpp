@@ -2,6 +2,7 @@
 #include "llvm/Analysis/BasicAliasAnalysis.h"
 #include "llvm/Analysis/Passes.h"
 #include "llvm/IR/DIBuilder.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/LegacyPassManager.h"
@@ -1373,6 +1374,12 @@ Function *MainFunctionAST::codegen() {
   NamedValues.clear();
 
   KSDbgInfo.emitLocation(Body.get());
+
+  // Emit an explicit breakpoint in the very beginning of the
+  // main function, so that we get the attention of the attached lldb.
+  Function *DbgTrapInst = Intrinsic::getDeclaration(TheModule.get(),
+                                                    Intrinsic::debugtrap);
+  Builder.CreateCall(DbgTrapInst);
 
   if (Value *RetVal = Body->codegen()) {
     Value *IntRetVal = Builder.CreateFPToSI(RetVal, Int32Ty, "retval");
