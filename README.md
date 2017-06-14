@@ -1,5 +1,7 @@
 # DbgKaleidoscopeOrcJit
 
+[![Build Status](https://travis-ci.org/weliveindetail/DbgKaleidoscopeOrcJit.svg?branch=master)](https://travis-ci.org/weliveindetail/DbgKaleidoscopeOrcJit)
+
 Minimal changes on LLVM [Kaleidoscope example (Chapter 9)](http://llvm.org/docs/tutorial/LangImpl09.html) to enable source level debugging of JITed code.
 See [commits page](https://github.com/weliveindetail/DbgKaleidoscopeOrcJit/commits/master) for step-by-step changes.
 

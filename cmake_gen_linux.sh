@@ -6,4 +6,4 @@ if [ ! -d "build" ]; then
 fi
 
 cd build
-cmake -DCMAKE_BUILD_TYPE=Debug -DLLVM_DIR=/media/LLVM/build-llvm40-clang-lldb/lib/cmake/llvm ../src
+cmake -DCMAKE_BUILD_TYPE=Debug -DLLVM_DIR=/media/LLVM/build-llvm40-clang-lldb/lib/cmake/llvm ..

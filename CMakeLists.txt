@@ -12,8 +12,8 @@ message(STATUS "LLVM_INCLUDE_DIRS = ${LLVM_INCLUDE_DIRS}")
 include_directories(${LLVM_INCLUDE_DIRS})
 
 add_executable(kaleidodbg
-  toy.cpp
-  KaleidoscopeJIT.h)
+  ${CMAKE_SOURCE_DIR}/src/toy.cpp
+  ${CMAKE_SOURCE_DIR}/src/KaleidoscopeJIT.h)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -fno-rtti")
 
